@@ -45,6 +45,19 @@ async function startServer() {
   }
   app.use("/outputs", express.static(outputsDir));
 
+  app.post("/api/reset-training", (req, res) => {
+    const historyPath = path.join(outputsDir, "history.json");
+    const modelPath = path.join(outputsDir, "model.pth");
+    
+    try {
+      if (fs.existsSync(historyPath)) fs.unlinkSync(historyPath);
+      if (fs.existsSync(modelPath)) fs.unlinkSync(modelPath);
+      res.json({ status: "success" });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
   // API Routes
   app.get("/api/datasets", (req, res) => {
     exec("(python3 backend/get_datasets.py || python backend/get_datasets.py)", (error, stdout, stderr) => {
@@ -582,6 +595,7 @@ except Exception as e:
       : ['train.py', '--epochs', epochs.toString()];
 
     const trainingProcess = spawn(trainCmd, trainArgs);
+    const startTime = Date.now();
 
     trainingProcess.stdout.on('data', (data) => {
       const output = data.toString();
@@ -593,7 +607,14 @@ except Exception as e:
         const currentEpoch = parseInt(match[1]);
         const totalEpochs = parseInt(match[2]);
         const progress = Math.round((currentEpoch / totalEpochs) * 100);
-        io.emit('training:status', { status: 'Training', progress, epoch: currentEpoch, totalEpochs });
+        
+        const elapsedTime = Date.now() - startTime;
+        const timePerEpoch = elapsedTime / currentEpoch;
+        const remainingEpochs = totalEpochs - currentEpoch;
+        const etaSeconds = Math.round((timePerEpoch * remainingEpochs) / 1000);
+        const eta = etaSeconds > 60 ? `${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s` : `${etaSeconds}s`;
+
+        io.emit('training:status', { status: 'Training', progress, epoch: currentEpoch, totalEpochs, eta });
       }
     });
 

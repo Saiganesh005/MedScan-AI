@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import { motion } from 'motion/react';
-import { Play, Image as ImageIcon, CheckCircle, AlertCircle, BarChart2, Eye, RefreshCw, Upload, X, FileText, Database, Sparkles } from 'lucide-react';
+import { Play, Image as ImageIcon, CheckCircle, AlertCircle, BarChart2, Eye, RefreshCw, Upload, X, FileText, Database, Sparkles, Download } from 'lucide-react';
 import ImageGenerator from './components/ImageGenerator';
 
 interface DatasetItem {
@@ -41,6 +41,7 @@ export default function TestingPage({ isModelTrained, setIsModelTrained, dataset
   const [evaluationMetrics, setEvaluationMetrics] = useState<any | null>(null);
   const [evaluationPlots, setEvaluationPlots] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'dataset' | 'upload' | 'evaluation' | 'generate'>('dataset');
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Upload states
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -152,7 +153,7 @@ export default function TestingPage({ isModelTrained, setIsModelTrained, dataset
     }
   };
 
-  const [trainingStatus, setTrainingStatus] = useState<{status: string, progress: number, epoch?: number, totalEpochs?: number} | null>(null);
+  const [trainingStatus, setTrainingStatus] = useState<{status: string, progress: number, epoch?: number, totalEpochs?: number, eta?: string, error?: string} | null>(null);
 
   useEffect(() => {
     const socket = io();
@@ -186,36 +187,86 @@ export default function TestingPage({ isModelTrained, setIsModelTrained, dataset
             <p className="text-sm font-bold text-[var(--text-color)]">
               {trainingStatus.status}: {trainingStatus.progress}% 
               {trainingStatus.epoch && trainingStatus.totalEpochs ? ` (Epoch ${trainingStatus.epoch}/${trainingStatus.totalEpochs})` : ''}
+              {trainingStatus.eta ? ` | ETA: ${trainingStatus.eta}` : ''}
             </p>
           </div>
-        ) : (
-          <button
-            onClick={async () => {
-              setIsTraining(true);
-              setTrainingStatus(null);
-              setTrainingError(null);
-              try {
-                const response = await fetch('/api/train', { 
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ epochs: 5 })
-                });
-                if (!response.ok) {
-                  const errorData = await response.json();
-                  throw new Error(errorData.error || 'Failed to start training');
+        ) : trainingStatus?.status === 'Completed' ? (
+          <div className="p-4 bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-xl border border-green-500/50 text-sm font-bold mb-4">
+            Training completed successfully!
+          </div>
+        ) : trainingStatus?.status === 'Failed' ? (
+          <div className="p-4 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl border border-red-500/50 text-sm font-bold mb-4">
+            Training failed: {trainingStatus.error}
+          </div>
+        ) : null}
+
+        {!isTraining && (
+          <div className="flex gap-4">
+            <button
+              onClick={async () => {
+                setIsTraining(true);
+                setTrainingStatus(null);
+                setTrainingError(null);
+                try {
+                  const response = await fetch('/api/train', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ epochs: 5 })
+                  });
+                  if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to start training');
+                  }
+                } catch (e: any) {
+                  console.error('Training failed:', e.message);
+                  setTrainingError(e.message);
+                  setIsTraining(false);
                 }
-              } catch (e: any) {
-                console.error('Training failed:', e.message);
-                setTrainingError(e.message);
-                setIsTraining(false);
-              }
-            }}
-            disabled={isTraining || dataExists === false}
-            className="px-6 py-3 bg-[var(--primary-color)] text-[var(--bg-color)] rounded-xl font-bold hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2"
-          >
-            {isTraining ? <RefreshCw className="animate-spin" size={20} /> : <Database size={20} />}
-            {isTraining ? 'Starting...' : dataExists === false ? 'Data Missing' : 'Train Model'}
-          </button>
+              }}
+              disabled={isTraining || dataExists === false}
+              className="px-6 py-3 bg-[var(--primary-color)] text-[var(--bg-color)] rounded-xl font-bold hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2"
+            >
+              {isTraining ? <RefreshCw className="animate-spin" size={20} /> : <Database size={20} />}
+              {isTraining ? 'Starting...' : dataExists === false ? 'Data Missing' : 'Train Model'}
+            </button>
+            <button
+              onClick={async () => {
+                if (window.confirm('Are you sure you want to reset the training state? This will delete the model checkpoint and history.')) {
+                  try {
+                    const response = await fetch('/api/reset-training', { method: 'POST' });
+                    if (!response.ok) throw new Error('Failed to reset training');
+                    setIsModelTrained(false);
+                  } catch (e: any) {
+                    setTrainingError(e.message);
+                  }
+                }
+              }}
+              className="px-6 py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-all flex items-center gap-2"
+            >
+              <X size={20} />
+              Reset Training
+            </button>
+            <button
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = '/outputs/model.pth';
+                link.download = 'model.pth';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+              disabled={!isModelTrained}
+              className="px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all disabled:opacity-50 flex items-center gap-2"
+            >
+              <Download size={20} />
+              Download Model
+            </button>
+          </div>
+        )}
+        {!isTraining && (
+          <div className="mt-2 text-xs text-[var(--secondary-text)]">
+            Need to prepare data? <a href="https://colab.research.google.com/drive/1RyRf8aGCfQJD9BaSzFBwvrARy9_-Op2J?usp=sharing" target="_blank" className="underline hover:text-[var(--primary-color)]">Capstone Project (4 Datasets) Notebook</a>
+          </div>
         )}
         {trainingError && (
           <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-xl border border-red-500/50 text-sm font-bold">
@@ -224,7 +275,7 @@ export default function TestingPage({ isModelTrained, setIsModelTrained, dataset
         )}
         {dataExists === false && (
           <div className="mt-4 p-4 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 rounded-xl border border-yellow-500/50 text-sm font-bold">
-            Data directory not found. Please run the data acquisition pipeline first.
+            Data directory not found. Please run the data acquisition pipeline first for <a href="https://colab.research.google.com/drive/1RyRf8aGCfQJD9BaSzFBwvrARy9_-Op2J?usp=sharing" target="_blank" className="underline">Capstone Project (4 Datasets) Notebook</a>.
           </div>
         )}
       </div>
@@ -300,13 +351,20 @@ export default function TestingPage({ isModelTrained, setIsModelTrained, dataset
                 <ImageIcon size={16} className="text-[var(--primary-color)]" />
                 Select Dataset Image
               </h3>
+              <input
+                type="text"
+                placeholder="Search images..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full p-2 rounded-lg bg-[var(--bg-color)] border border-[var(--primary-color)]/20 focus:border-[var(--primary-color)] outline-none transition-all text-sm"
+              />
               <div className="grid grid-cols-1 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {datasetItems.length === 0 ? (
+                {datasetItems.filter(img => img.imageName.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
                   <div className="p-8 text-center border-2 border-dashed border-[var(--primary-color)]/20 rounded-xl">
-                    <p className="text-sm text-[var(--secondary-text)]">No images in dataset. Please import data first.</p>
+                    <p className="text-sm text-[var(--secondary-text)]">No images found.</p>
                   </div>
                 ) : (
-                  datasetItems.map((img) => (
+                  datasetItems.filter(img => img.imageName.toLowerCase().includes(searchQuery.toLowerCase())).map((img) => (
                     <button
                       key={img.id}
                       onClick={() => setSelectedImage(img)}
@@ -317,7 +375,7 @@ export default function TestingPage({ isModelTrained, setIsModelTrained, dataset
                       }`}
                     >
                       {img.previewUrl ? (
-                        <img src={img.previewUrl} alt={img.imageName} className="w-12 h-12 rounded-lg object-cover border border-[var(--primary-color)]/30" />
+                        <img src={img.previewUrl} alt={img.imageName} loading="lazy" className="w-12 h-12 rounded-lg object-cover border border-[var(--primary-color)]/30" />
                       ) : (
                         <div className="w-12 h-12 rounded-lg bg-gray-200 dark:bg-gray-800 flex items-center justify-center">
                           <ImageIcon size={20} className="text-gray-400" />
