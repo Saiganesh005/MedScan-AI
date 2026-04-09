@@ -100,7 +100,12 @@ export default function AnalysisPage({ uploadedImage, setUploadedImage, addToHis
         age: Math.floor(Math.random() * 50) + 20,
         gender: Math.random() > 0.5 ? 'M' : 'F',
         disease: newResults.prediction,
-        outcome: newResults.confidence > 80 ? 'Confirmed' : 'Review Required'
+        outcome: newResults.confidence > 80 ? 'Confirmed' : 'Review Required',
+        image: uploadedImage,
+        metrics: newResults.metrics,
+        confusionMatrix: newResults.confusionMatrix,
+        confidence: newResults.confidence,
+        analysis: newResults.analysis
       });
     } catch (error: any) {
       console.error("Analysis failed:", error);
